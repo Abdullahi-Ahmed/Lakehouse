@@ -163,7 +163,3 @@ if shap_enabled:
 # Print the absolute model uri path to the logged artifact
 # Use mlflow.pyfunc.load_model(<model-uri-path>) to load this model in any notebook
 print(f"Model artifact is logged at: { mlflow_run.info.artifact_uri}/model")
-
-# COMMAND ----------
-
-
