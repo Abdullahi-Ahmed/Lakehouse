@@ -1,4 +1,15 @@
 # Databricks notebook source
+# MAGIC %md
+# MAGIC ## Implementing a Webhook
+# MAGIC 
+# MAGIC We're going to implement a couple of notification webhooks using HTTP endpoints and Slack.
+# MAGIC 
+# MAGIC ### Helper Function
+# MAGIC 
+# MAGIC The first thing we're going to do is create a helper function to call MLflow endpoints.
+
+# COMMAND ----------
+
 import mlflow
 from mlflow.utils.rest_utils import http_request
 import json
@@ -23,7 +34,7 @@ def mlflow_call_endpoint(endpoint, method, body='{}'):
 
 # COMMAND ----------
 
-# MAGIC %run ./utilities/Webhook
+# MAGIC %run ./utilities/WebhookURL
 
 # COMMAND ----------
 
@@ -36,7 +47,7 @@ def mlflow_call_endpoint(endpoint, method, body='{}'):
 
 import json 
 
-model_name = "jijimodel"
+model_name = "BaselineJiji"
 
 trigger_slack = json.dumps({
     "model_name": model_name,
@@ -49,6 +60,10 @@ trigger_slack = json.dumps({
 })
 
 mlflow_call_endpoint("registry-webhooks/create", method = "POST", body = trigger_slack)
+
+# COMMAND ----------
+
+dbutils.widgets.help("combobox")
 
 # COMMAND ----------
 
@@ -88,11 +103,11 @@ model_webhooks
 
 # COMMAND ----------
 
-mlflow_call_endpoint(
-    "registry-webhooks/delete",
-    method="DELETE",
-    body=json.dumps({'id': model_webhooks["webhooks"][0]["id"]})
-)
+#mlflow_call_endpoint(
+#    "registry-webhooks/delete",
+#    method="DELETE",
+#    body=json.dumps({'id': model_webhooks["webhooks"][0]["id"]})
+#)
 
 # COMMAND ----------
 
@@ -101,12 +116,12 @@ mlflow_call_endpoint(
 
 # COMMAND ----------
 
-for webhook in model_webhooks["webhooks"]:
-    mlflow_call_endpoint(
-    "registry-webhooks/delete",
-    method="DELETE",
-    body=json.dumps({'id': webhook["id"]})
-)
+#for webhook in model_webhooks["webhooks"]:
+#    mlflow_call_endpoint(
+#    "registry-webhooks/delete",
+#    method="DELETE",
+#    body=json.dumps({'id': webhook["id"]})
+#)
 
 # COMMAND ----------
 
@@ -115,6 +130,6 @@ for webhook in model_webhooks["webhooks"]:
 
 # COMMAND ----------
 
-updated_model_webhooks = mlflow_call_endpoint("registry-webhooks/list", method = "GET", body = list_model_webhooks)
-updated_model_webhooks
+#updated_model_webhooks = mlflow_call_endpoint("registry-webhooks/list", method = "GET", body = list_model_webhooks)
+#updated_model_webhooks
 

@@ -6,10 +6,10 @@
 
 import mlflow, json
 from mlflow.tracking import MlflowClient
-from databricks.feature_store import FeatureStoreClient
+#from databricks.feature_store import FeatureStoreClient
 
 client = MlflowClient()
-fs = FeatureStoreClient()
+#fs = FeatureStoreClient()
 
 # After receiving payload from webhooks, use MLflow client to retrieve model details and lineage
 try:
@@ -19,7 +19,7 @@ try:
   if 'to_stage' in registry_event and registry_event['to_stage'] != 'Staging':
     dbutils.notebook.exit()
 except Exception:
-  model_name = 'jijimodel'
+  model_name = 'BaselineJiji'
   version = "1"
 print(model_name, version)
 
@@ -35,12 +35,11 @@ run_info = client.get_run(run_id=model_details.run_id)
 
 # COMMAND ----------
 
-# Read from feature store prod table?
-data_source = run_info.data.tags['db_table']
-features = fs.read_table(data_source)
+features = spark.read.table("tempdb.silver")
+
 
 # Load model as a Spark UDF
-model_uri = f'models:/{model_name}/{version}'
+model_uri = f'models:/BaselineJiji/1'
 loaded_model = mlflow.pyfunc.spark_udf(spark, model_uri=model_uri)
 
 # Predict on a Spark DataFrame
@@ -68,37 +67,6 @@ if not loaded_model.metadata.signature:
   client.set_model_version_tag(name=model_name, version=version, key="has_signature", value=0)
 else:
   client.set_model_version_tag(name=model_name, version=version, key="has_signature", value=1)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC 
-# MAGIC #### Demographic accuracy
-# MAGIC 
-# MAGIC How does the model perform across various slices of the customer base?
-
-# COMMAND ----------
-
-import numpy as np
-features = features.withColumn('predictions', loaded_model(*features.columns)).toPandas()
-features['accurate'] = np.where(features.churn == features.predictions, 1, 0)
-
-# Check run tags for demographic columns and accuracy in each segment
-try:
-  demographics = run_info.data.tags['demographic_vars'].split(",")
-  slices = features.groupby(demographics).accurate.agg(acc = 'sum', obs = lambda x:len(x), pct_acc = lambda x:sum(x)/len(x))
-  
-  # Threshold for passing on demographics is 55%
-  demo_test = "pass" if slices['pct_acc'].any() > 0.55 else "fail"
-  
-  # Set tags in registry
-  client.set_model_version_tag(name=model_name, version=version, key="demo_test", value=demo_test)
-
-  print(slices)
-except KeyError:
-  print("KeyError: No demographics_vars tagged with this model version.")
-  client.set_model_version_tag(name=model_name, version=version, key="demo_test", value="none")
-  pass
 
 # COMMAND ----------
 
@@ -163,57 +131,3 @@ else:
 
 results = client.get_model_version(model_name, version)
 results.tags
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC Notify the Slack channel with the same webhook used to alert on transition change in MLflow.
-
-# COMMAND ----------
-
-import requests, json
-
-slack_message = "Registered model '{}' version {} baseline test results: {}".format(model_name, version, results.tags)
-webhook_url = dbutils.secrets.get("rk_webhooks", "slack")
-
-body = {'text': slack_message}
-response = requests.post(
-    webhook_url, data=json.dumps(body),
-    headers={'Content-Type': 'application/json'}
-)
-if response.status_code != 200:
-    raise ValueError(
-        'Request to slack returned an error %s, the response is:\n%s'
-        % (response.status_code, response.text)
-)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Move to Staging or Archived
-# MAGIC 
-# MAGIC The next phase of this models' lifecycle will be to `Staging` or `Archived`, depending on how it fared in testing.
-
-# COMMAND ----------
-
-# MAGIC %run ./helpers/registry_helpers
-
-# COMMAND ----------
-
-# If any checks failed, reject and move to Archived
-if '0' in results or 'fail' in results: 
-  reject_request_body = {'name': model_details.name, 
-                         'version': model_details.version, 
-                         'stage': 'Staging', 
-                         'comment': 'Tests failed - check the tags or the job run to see what happened.'}
-  
-  mlflow_call_endpoint('transition-requests/reject', 'POST', json.dumps(reject_request_body))
-  
-else: 
-  approve_request_body = {'name': model_details.name,
-                          'version': model_details.version,
-                          'stage': 'Staging',
-                          'archive_existing_versions': 'true',
-                          'comment': 'All tests passed!  Moving to staging.'}
-  
-  mlflow_call_endpoint('transition-requests/approve', 'POST', json.dumps(approve_request_body))

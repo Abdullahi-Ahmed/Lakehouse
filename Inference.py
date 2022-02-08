@@ -13,19 +13,19 @@
 
 import mlflow
 
-model = mlflow.pyfunc.spark_udf(spark, model_uri="models:/hhar_churn/staging")
+model = mlflow.pyfunc.spark_udf(spark, model_uri="models:/BaselineJiji/staging")
 
 # COMMAND ----------
 
 from databricks.feature_store import FeatureStoreClient
 
 fs = FeatureStoreClient()
-features = fs.read_table('ibm_telco_churn.churn_features')
+features = fs.read_table('tempdb.jiji_features')
 
 # COMMAND ----------
 
 predictions = features.withColumn('predictions', model(*features.columns))
-display(predictions.select("customerId", "predictions"))
+display(predictions.select("uid", "predictions"))
 
 # COMMAND ----------
 
@@ -34,4 +34,4 @@ display(predictions.select("customerId", "predictions"))
 
 # COMMAND ----------
 
-predictions.write.format("delta").mode("append").saveAsTable("ibm_telco_churn.churn_preds")
+predictions.write.format("delta").mode("append").saveAsTable("temp.jiji_preds")

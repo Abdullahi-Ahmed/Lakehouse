@@ -22,12 +22,26 @@ df = (df.withColumn('Area', split(df['Location'], ',').getItem(1))
 
 # COMMAND ----------
 
-data = df.na.drop("any")
-data= data.select(['Model','Make','YOM','Color','Used','Transmission','Mileage','Price','Area','City'])
+from pyspark.sql.functions import col, sha2, concat
+import pandas as pd
+import numpy as np
+
+df = df.withColumn("uid", sha2(concat(col("Model"), col("Make"), col("YOM"), col("Color"), col("Used"), col("Transmission"), col("Mileage"), col("Price"), col("Area"), col("City")), 256))
+
+df = df.toPandas()
+allowed_vals = ['White', 'Black', 'Silver', 'Pearl', 'Red', 'Blue', 'Gray','Burgandy', 'Gold', 'Purple', 'Brown', 'Green', 'Orange', 'Yellow', 'Beige', 'Pink']
+
+df['Color'] = np.where(df['Color'].isin(allowed_vals), df['Color'], 'Other')
+df = df.dropna()
+
+# COMMAND ----------
+
+df_cleaned = spark.createDataFrame(df)
+cleaned_df= df_cleaned.select(['Model','Make','YOM','Color','Used','Transmission','Mileage','Price','Area','City', 'uid'])
 
 
 
-(data.write
+(cleaned_df.write
  .format("delta")
  .mode("overwrite")
  .saveAsTable("tempdb.silver")
@@ -36,16 +50,58 @@ data= data.select(['Model','Make','YOM','Color','Used','Transmission','Mileage',
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC ### Feature Store
+
+# COMMAND ----------
+
+from pyspark.ml.feature import OneHotEncoder, StringIndexer
+def compute_customer_features(data):
+
+    categoricalCols = [field for (field, dataType) in data.dtypes 
+                       if dataType == "string"]
+    indexOutputCols = [x + "Index" for x in categoricalCols]
+    oheOutputCols = [x + "OHE" for x in categoricalCols]
+
+    stringIndexer = StringIndexer(inputCols=categoricalCols, 
+                                  outputCols=indexOutputCols, 
+                                  handleInvalid="skip")
+    oheEncoder = OneHotEncoder(inputCols=indexOutputCols, 
+                               outputCols=oheOutputCols)
+    return data
+
+
+
+# COMMAND ----------
+
+from databricks.feature_store import FeatureStoreClient
+
+fs = FeatureStoreClient()
+
+jiji_features_df = compute_customer_features(cleaned_df)
+
+jiji_feature_table = fs.create_feature_table(
+  name='tempdb.jiji_features',
+  keys='uid',
+  schema=jiji_features_df.spark.schema(),
+  description='These features are of jiji car data table in the lakehouse.cleaned up their names there is No aggregations were performed.'
+)
+
+
+# COMMAND ----------
+
 loaded_df = spark.read.table("tempdb.silver").toPandas()
 
 # COMMAND ----------
 
-import pandas as pd
-import numpy as np
-allowed_vals = ['White', 'Black', 'Silver', 'Pearl', 'Red', 'Blue', 'Gray','Burgandy', 'Gold', 'Purple', 'Brown', 'Green', 'Orange', 'Yellow', 'Beige', 'Pink']
-
-loaded_df['Color'] = np.where(loaded_df['Color'].isin(allowed_vals), loaded_df['Color'], 'Other')
-
+loaded_df = spark.createDataFrame(loaded_df)
+golddata= loaded_df.select(['Model','Make','YOM','Color','Used','Transmission','Mileage','Price','Area','City'])
+(golddata.write
+ .format("delta")
+ .mode("overwrite")
+ .saveAsTable("tempdb.gold")
+ 
+)
 
 # COMMAND ----------
 
@@ -113,15 +169,11 @@ X_val, X_test, y_val, y_test = train_test_split(split_X_rem, split_y_rem, test_s
 
 # COMMAND ----------
 
-loaded_df.isnull().sum()
-
-# COMMAND ----------
-
 # Enable automatic logging of input samples, metrics, parameters, and models
 import mlflow
 mlflow.sklearn.autolog(log_input_examples=True, silent=True)
 
-with mlflow.start_run(run_name="CarPredictionModel") as mlflow_run:
+with mlflow.start_run(run_name="BaselineModel") as mlflow_run:
     model.fit(X_train, y_train)
     
     # Training metrics are logged by MLflow autologging
@@ -163,3 +215,7 @@ if shap_enabled:
 # Print the absolute model uri path to the logged artifact
 # Use mlflow.pyfunc.load_model(<model-uri-path>) to load this model in any notebook
 print(f"Model artifact is logged at: { mlflow_run.info.artifact_uri}/model")
+
+# COMMAND ----------
+
+

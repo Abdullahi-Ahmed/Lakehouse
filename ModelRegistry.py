@@ -30,11 +30,10 @@ import mlflow
 from mlflow.tracking import MlflowClient
 
 # Manually set parameter values
-model_name = "jijimodel"
-
-runs:/d62302462ec04a16b67ad875e3e200ba/model
+model_name = "BaselineJiji"
+#to get the model_uri run this print(f"runs:/{ mlflow_run.info.run_id }/model") where you're running/tracking your run
 # Register model
-model_uri = f"runs:/e1ddb78acbc94263a4a2c02d5d259377/model"
+model_uri = f"runs:/e7f179acd9d94e6b88da5858ce3443f0/model"
 model_details = mlflow.register_model(model_uri, model_name)
 
 # COMMAND ----------
@@ -73,3 +72,25 @@ client.transition_model_version_stage(
     stage="Production",
     archive_existing_versions=True
 )
+
+# COMMAND ----------
+
+from mlflow.tracking.client import MlflowClient
+
+client = MlflowClient()
+model_version_details = client.get_model_version(name=model_name, version=model_details.version)
+
+client.update_registered_model(
+  name=model_details.name,
+  description="This model predicts the price of a car in jiji cardealership  using features from the tempdb database we created in the begining for our class.  It is used to update the Jiji cars Dashboard and later use streamlit for web interaction ."
+)
+
+client.update_model_version(
+  name=model_details.name,
+  version=model_details.version,
+  description="This model version was built using sklearn's linear model."
+)
+
+# COMMAND ----------
+
+

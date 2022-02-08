@@ -7,7 +7,7 @@
 from databricks.feature_store import FeatureStoreClient
 
 # Set config for database name, file paths, and table names
-feature_table = 'ibm_telco_churn.churn_features'
+feature_table = 'tempdb.jiji_features'
 
 fs = FeatureStoreClient()
 
@@ -17,9 +17,9 @@ features = fs.read_table(feature_table)
 
 import databricks.automl
 model = databricks.automl.classify(features, 
-                                   target_col = "churn",
-                                   data_dir= "dbfs:/tmp/rafi.kurlansik/",
-                                   timeout_minutes=5) 
+                                   target_col = "Price",
+                                   data_dir= "dbfs:/tmp/omar/prediction/",
+                                   timeout_minutes=120) 
 
 # COMMAND ----------
 
@@ -34,11 +34,10 @@ from mlflow.tracking.client import MlflowClient
 client = MlflowClient()
 
 run_id = model.best_trial.mlflow_run_id
-model_name = "hhar_churn"
+model_name = "RetainedModel"
 model_uri = f"runs:/{run_id}/model"
 
-client.set_tag(run_id, key='db_table', value='ibm_telco_churn.churn_features')
-client.set_tag(run_id, key='demographic_vars', value='seniorCitizen,gender_Female')
+client.set_tag(run_id, key='db_table', value='tempdb.jiji_features')
 
 model_details = mlflow.register_model(model_uri, model_name)
 
@@ -53,13 +52,13 @@ model_version_details = client.get_model_version(name=model_name, version=model_
 
 client.update_registered_model(
   name=model_details.name,
-  description="This model predicts whether a customer will churn using features from the ibm_telco_churn database.  It is used to update the Telco Churn Dashboard in SQL Analytics."
+  description="This model predicts the price of a car in jiji cardealership  using features from the tempdb database we created in the begining for our class.  It is used to update the Jiji cars Dashboard and later use streamlit for web interaction ."
 )
 
 client.update_model_version(
   name=model_details.name,
   version=model_details.version,
-  description="This model version was built using sklearn's LogisticRegression."
+  description="This model version was built using sklearn's linear model."
 )
 
 # COMMAND ----------
